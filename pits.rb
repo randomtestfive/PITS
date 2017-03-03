@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
 require 'sinatra/base'
+require 'sinatra-websocket'
 require 'yaml'
 require 'slim'
 require 'pry'
 require 'net/ftp'
+require 'em-websocket'
 require 'fileutils'
 require 'sass'
 
@@ -20,11 +22,34 @@ class PITS < Sinatra::Base
         @config['log_settings']['repo_path']
       )
     @git_command = "git '--git-dir=#{repo_path}/.git' '--work-tree=#{repo_path}'"
+
+    @@sockets = []
     # @config.inspect
   end
 
   get '/' do
-    slim :index
+    if !request.websocket?
+      slim :index
+    else
+      binding.pry
+      request.websocket do |ws|
+        ws.onopen do
+          ws.send("Hello World!")
+          @@sockets << ws
+        end
+        ws.onmessage do |msg|
+          EM.next_tick {
+            @@sockets.each{|s|
+              s.send(msg)
+            }
+          }
+        end
+        ws.onclose do
+          warn("websocket closed")
+          @@sockets.delete(ws)
+        end
+      end
+    end
   end
 
   get '/logs/:ip' do
